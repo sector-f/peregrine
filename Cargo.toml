@@ -1,0 +1,9 @@
+[package]
+name = "peregrine"
+version = "0.1.0"
+authors = ["Adam <sector-f@users.noreply.github.com>"]
+
+[dependencies]
+hyper = "0.10.5"
+hyper-native-tls = "0.2.2"
+clap = "2.22.2"
