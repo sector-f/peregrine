@@ -134,54 +134,58 @@ fn main() {
         }
 
         if is_identity_content_encoding && is_identity_transfer_encoding {
-            if let Some(size) = content_length {
-                let sections = 4;
+            if accepts_byte_ranges {
+                if let Some(size) = content_length {
+                    let sections = 4;
 
-                let size = **size;
-                let partial = size / sections;
-                let mut current_byte: u64 = 0;
-                let mut part_number: u64 = 1;
+                    let size = **size;
+                    let partial = size / sections;
+                    let mut current_byte: u64 = 0;
+                    let mut part_number: u64 = 1;
 
-                let mut threads = Vec::new();
-                while current_byte + 1 < size {
-                    let url = url_string.into_url().unwrap();
-                    let next_byte = current_byte + 1;
-                    let range =
-                        if current_byte == 0 {
-                            ByteRangeSpec::FromTo(0, partial)
-                        } else if current_byte + partial < size {
-                            ByteRangeSpec::FromTo(next_byte, next_byte + partial - 1)
-                        } else {
-                            ByteRangeSpec::AllFrom(next_byte)
-                        };
+                    let mut threads = Vec::new();
+                    while current_byte + 1 < size {
+                        let url = url_string.into_url().unwrap();
+                        let next_byte = current_byte + 1;
+                        let range =
+                            if current_byte == 0 {
+                                ByteRangeSpec::FromTo(0, partial)
+                            } else if current_byte + partial < size {
+                                ByteRangeSpec::FromTo(next_byte, next_byte + partial - 1)
+                            } else {
+                                ByteRangeSpec::AllFrom(next_byte)
+                            };
 
-                    println!("Range: {}", range);
+                        println!("Range: {}", range);
 
-                    let filename = PathBuf::from(format!("testing.part{}", part_number));
-                    threads.push(thread::spawn(|| {
-                        // To-do: make this work like `curl -O`
+                        let filename = PathBuf::from(format!("testing.part{}", part_number));
+                        threads.push(thread::spawn(|| {
+                            // To-do: make this work like `curl -O`
 
-                        let connector = HttpsConnector::new(NativeTlsClient::new().unwrap());
-                        let client = Client::with_connector(connector);
+                            let connector = HttpsConnector::new(NativeTlsClient::new().unwrap());
+                            let client = Client::with_connector(connector);
 
-                        let identity = QualityItem::new(Encoding::Identity, Quality(1000));
-                        let mut response = client.get(url)
-                            .header(AcceptEncoding(vec![identity]))
-                            .header(Range::Bytes(vec![range]))
-                            .send().unwrap();
+                            let identity = QualityItem::new(Encoding::Identity, Quality(1000));
+                            let mut response = client.get(url)
+                                .header(AcceptEncoding(vec![identity]))
+                                .header(Range::Bytes(vec![range]))
+                                .send().unwrap();
 
-                        // let mut buffer: Vec<u8> = Vec::new();
+                            // let mut buffer: Vec<u8> = Vec::new();
 
-                        let mut file = File::create(filename).unwrap();
-                        let copied_bits = copy(&mut response, &mut file);
-                    }));
-                    current_byte += partial;
-                    part_number += 1;
+                            let mut file = File::create(filename).unwrap();
+                            let copied_bits = copy(&mut response, &mut file);
+                        }));
+                        current_byte += partial;
+                        part_number += 1;
+                    }
+
+                    for thread in threads {
+                        thread.join();
+                    }
                 }
+            } else {
 
-                for thread in threads {
-                    thread.join();
-                }
             }
          }
     }
