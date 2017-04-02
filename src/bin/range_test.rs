@@ -74,7 +74,25 @@ fn main() {
             .header(AcceptEncoding(vec![identity]))
             .send().unwrap();
 
-        // .header(Range::Bytes(vec![ByteRangeSpec::FromTo(0, 128)]))
+        println!("{}", response.status);
+        let path = response.url.path_segments();
+        let default_index = "index.html";
+        let file = {
+            match path {
+                Some(segments) => {
+                    let last = segments.last().unwrap();
+                    if last == "" {
+                        default_index
+                    } else {
+                        last
+                    }
+                },
+                None => {
+                    default_index
+                },
+            }
+        };
+        println!("Saving as {}", file);
 
         let ref headers = response.headers;
         // println!("{}", headers);
@@ -134,7 +152,7 @@ fn main() {
         }
 
         if is_identity_content_encoding && is_identity_transfer_encoding {
-            if accepts_byte_ranges {
+            if accepts_byte_ranges { // Use range request
                 if let Some(size) = content_length {
                     let sections = 4;
 
@@ -158,7 +176,7 @@ fn main() {
 
                         println!("Range: {}", range);
 
-                        let filename = PathBuf::from(format!("testing.part{}", part_number));
+                        let filename = PathBuf::from(format!("{}.part{}", file, part_number));
                         threads.push(thread::spawn(|| {
                             // To-do: make this work like `curl -O`
 
@@ -184,8 +202,19 @@ fn main() {
                         thread.join();
                     }
                 }
-            } else {
+            } else { // Don't use a range request
+                let url = url_string.into_url().unwrap();
 
+                let connector = HttpsConnector::new(NativeTlsClient::new().unwrap());
+                let client = Client::with_connector(connector);
+
+                let identity = QualityItem::new(Encoding::Identity, Quality(1000));
+                let mut response = client.get(url)
+                    .header(AcceptEncoding(vec![identity]))
+                    .send().unwrap();
+
+                let mut file = File::create(file).unwrap();
+                let copied_bits = copy(&mut response, &mut file);
             }
          }
     }
