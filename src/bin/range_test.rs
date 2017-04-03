@@ -1,6 +1,6 @@
 extern crate hyper;
 use hyper::Client;
-use hyper::net::HttpsConnector;
+use hyper::net::{HttpsConnector, HttpConnector};
 use hyper::header::*;
 
 extern crate hyper_native_tls;
@@ -13,7 +13,8 @@ use clap::{App, Arg};
 use std::path::PathBuf;
 use std::thread;
 use std::fs::File;
-use std::io::{Read, Write, copy};
+use std::io::{Read, Write, copy, stderr};
+use std::default::Default;
 
 #[allow(dead_code)]
 enum Download {
@@ -34,6 +35,19 @@ fn is_url(val: String) -> Result<(), String> {
         },
         Err(e) => {
             return Err(format!("{}", e))
+        },
+    }
+}
+
+fn get_client() -> Client {
+    match NativeTlsClient::new() {
+        Ok(tls) => {
+            let connector = HttpsConnector::new(tls);
+            Client::with_connector(connector)
+        },
+        Err(e) => {
+            let _ = writeln!(stderr(), "Not using TLS due to error: {}", e);
+            Client::with_connector(HttpConnector::default())
         },
     }
 }
@@ -66,8 +80,7 @@ fn main() {
     for url_string in urls {
         let url = url_string.into_url().unwrap();
 
-        let connector = HttpsConnector::new(NativeTlsClient::new().unwrap());
-        let client = Client::with_connector(connector);
+        let client = get_client();
 
         let identity = QualityItem::new(Encoding::Identity, Quality(1000));
         let response = client.get(url)
@@ -80,12 +93,14 @@ fn main() {
         let file = {
             match path {
                 Some(segments) => {
-                    let last = segments.last().unwrap();
-                    if last == "" {
-                        default_index
-                    } else {
-                        last
+                    let segments = segments.collect::<Vec<_>>();
+                    let mut last_non_null = default_index;
+                    for i in (0..segments.len()).rev() {
+                        if segments[i] != "" {
+                            last_non_null = segments[i]
+                        }
                     }
+                    last_non_null
                 },
                 None => {
                     default_index
@@ -180,8 +195,7 @@ fn main() {
                         threads.push(thread::spawn(|| {
                             // To-do: make this work like `curl -O`
 
-                            let connector = HttpsConnector::new(NativeTlsClient::new().unwrap());
-                            let client = Client::with_connector(connector);
+                            let client = get_client();
 
                             let identity = QualityItem::new(Encoding::Identity, Quality(1000));
                             let mut response = client.get(url)
@@ -205,8 +219,7 @@ fn main() {
             } else { // Don't use a range request
                 let url = url_string.into_url().unwrap();
 
-                let connector = HttpsConnector::new(NativeTlsClient::new().unwrap());
-                let client = Client::with_connector(connector);
+                let client = get_client();
 
                 let identity = QualityItem::new(Encoding::Identity, Quality(1000));
                 let mut response = client.get(url)
