@@ -21,6 +21,17 @@ impl Download {
             }
         }
     }
+
+    pub fn num_parts(&self) -> usize {
+        match self {
+            &Download::Partial(ref part_dl) => {
+                part_dl.ranges.len()
+            },
+            &Download::Full(_) => {
+                1
+            }
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -62,9 +73,10 @@ impl PartDl {
                     Some(ref segments) => {
                         let segments = segments.clone().collect::<Vec<_>>();
                         let mut last_non_null = default_index;
-                        for i in (0..segments.len()).rev() {
-                            if segments[i] != "" {
-                                last_non_null = segments[i]
+                        for segment in segments.into_iter().rev() {
+                            if segment != "" {
+                                last_non_null = segment;
+                                break;
                             }
                         }
                         PathBuf::from(last_non_null)
@@ -96,9 +108,10 @@ impl FullDl {
                     Some(ref segments) => {
                         let segments = segments.clone().collect::<Vec<_>>();
                         let mut last_non_null = default_index;
-                        for i in (0..segments.len()).rev() {
-                            if segments[i] != "" {
-                                last_non_null = segments[i]
+                        for segment in segments.into_iter().rev() {
+                            if segment != "" {
+                                last_non_null = segment;
+                                break;
                             }
                         }
                         PathBuf::from(last_non_null)

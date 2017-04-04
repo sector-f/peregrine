@@ -116,6 +116,7 @@ fn get_download(url: hyper::Url, name: Option<PathBuf>, sections: u64) -> Result
                             ByteRangeSpec::AllFrom(next_byte)
                         }
                     );
+                    current_byte += partial;
                 }
                 Ok(Download::new(url.clone(), name, Some(byte_ranges)))
             } else { // Server didn't provide content length
@@ -171,28 +172,35 @@ fn main() {
         }
     }
 
+    let mut dl_count = 0;
     for dl in downloads {
+        let tx = tx.clone();
+        dl_count += dl.num_parts();
         match dl {
             Download::Partial(part_dl) => {
-                // let name = part_dl.name("index.html");
+                let name = part_dl.name("index.html");
 
-                // let ranges = part_dl.ranges();
-                // for i in 0..part_dl.ranges().len() {
-                //     let filename = PathBuf::from(format!("{}.part{}", name.display(), i + 1));
-                //     let part_dl = part_dl.clone();
-                //     threadpool.execute(move || {
-                //         let client = get_client();
+                let ranges = part_dl.ranges();
+                for i in 0..part_dl.ranges().len() {
+                    let tx = tx.clone();
+                    let url_string = part_dl.url.clone().into_string();
 
-                //         let identity = QualityItem::new(Encoding::Identity, Quality(1000));
-                //         let mut response = client.get(part_dl.url)
-                //             .header(AcceptEncoding(vec![identity]))
-                //             .header(Range::Bytes(vec![part_dl.ranges()[i]]))
-                //             .send().unwrap();
+                    let filename = PathBuf::from(format!("{}.part{}", name.display(), i + 1));
+                    let part_dl = part_dl.clone();
+                    threadpool.execute(move || {
+                        let client = get_client();
 
-                //         let mut file = File::create(filename).unwrap();
-                //         let copied_bits = copy(&mut response, &mut file);
-                //     });
-                // }
+                        let identity = QualityItem::new(Encoding::Identity, Quality(1000));
+                        let mut response = client.get(&url_string)
+                            .header(AcceptEncoding(vec![identity]))
+                            .header(Range::Bytes(vec![part_dl.ranges()[i].clone()]))
+                            .send().unwrap();
+
+                        let mut file = File::create(filename).unwrap();
+                        let copied_bits = copy(&mut response, &mut file);
+                        tx.send(());
+                    });
+                }
             },
             Download::Full(full_dl) => {
                 threadpool.execute(move || {
@@ -206,8 +214,15 @@ fn main() {
 
                     let mut file = File::create(filename).unwrap();
                     let copied_bits = copy(&mut response, &mut file);
+                    tx.send(());
                 });
             },
         }
+    }
+    drop(tx);
+
+
+    for _ in 0..dl_count {
+        let _ = rx.recv();
     }
 }
